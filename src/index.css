@@ -3,24 +3,18 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-}
 
-:root {
-  --background: #ffffff;
-  --foreground: #000000;
-  --border: #f4f4f5;
-  --accent-soft: #fafafa;
-  --text-main: #09090b;
-  --text-sub: #71717a;
-}
-
-* {
-  border-color: var(--border);
+  --color-background: #ffffff;
+  --color-foreground: #000000;
+  --color-divider: #f4f4f5;
+  --color-accent-soft: #fafafa;
+  --color-text-main: #09090b;
+  --color-text-sub: #71717a;
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
+  background-color: var(--color-background);
+  color: var(--color-foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -31,7 +25,7 @@ body {
 }
 
 .card-bento {
-  @apply bg-white p-8 rounded-[40px] border border-border flex flex-col transition-all duration-500;
+  @apply bg-white p-8 rounded-[40px] border border-divider flex flex-col transition-all duration-500;
 }
 
 .card-title-bento {
