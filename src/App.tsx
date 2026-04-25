@@ -2245,10 +2245,6 @@ function DeepFocusOverlay({ task, onClose, onComplete, onStartTimer, onStopTimer
 
 function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -2258,19 +2254,12 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
     setLoading(true);
     
     try {
-      // Admin backdoor for demo/dev
-      if (phone === '999999999' && password === 'admin123') {
-        localStorage.setItem('mar_admin_auth', 'true');
-        window.location.reload();
-        return;
-      }
-
-      const { data, error: err } = await supabase.schema('mar').from('profiles').select('*').eq('phone_number', phone).single();
+      const { data, error: err } = await supabase.schema('mar').from('profiles').select('*').eq('phone_number', '+51' + phone).single();
       
       if (err || !data) {
-        setError('Acceso denegado. Verifica tu teléfono o membresía.');
+        setError('Acceso denegado. Verifica tu número móvil.');
       } else {
-        localStorage.setItem('mar_verified_phone', phone);
+        localStorage.setItem('mar_verified_phone', '+51' + phone);
         setUser(data);
       }
     } catch (err) {
@@ -2280,131 +2269,72 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      const { data, error: err } = await supabase.schema('mar').from('profiles').insert([{
-        full_name: fullName,
-        email,
-        phone_number: phone,
-        subscription_status: 'pending'
-      }]).select();
-
-      if (err) {
-        setError('Error al registrar. El teléfono ya podría estar en uso.');
-      } else {
-        alert('Solicitud enviada. Un administrador validará tu membresía.');
-        setIsRegistering(false);
-      }
-    } catch (err) {
-      setError('Error de conexión.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-yellow-400/5 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl -z-10" />
-      <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-black/5 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl -z-10" />
-      
+    <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-6">
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full space-y-10"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-[500px] w-full bg-white rounded-[60px] p-12 md:p-16 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.05)] border border-white"
       >
-        <div className="text-center space-y-4">
-          <Logo size="xl" />
-          <div className="space-y-1">
-            <h1 className="text-4xl font-black tracking-tighter">ELÉCTRICOS & ENFOCADOS</h1>
-            <p className="text-zinc-500 font-medium tracking-tight">Accede a tu centro de comando estratégico.</p>
-          </div>
-        </div>
-
-        <div className="bg-zinc-50 p-1 rounded-[40px] border border-zinc-100 flex shadow-sm">
-          <button 
-            onClick={() => setIsRegistering(false)}
-            className={`flex-1 py-4 rounded-[36px] font-black text-xs uppercase tracking-widest transition-all ${!isRegistering ? 'bg-white shadow-md text-black' : 'text-zinc-400'}`}
-          >
-            Acceder
-          </button>
-          <button 
-            onClick={() => setIsRegistering(true)}
-            className={`flex-1 py-4 rounded-[36px] font-black text-xs uppercase tracking-widest transition-all ${isRegistering ? 'bg-white shadow-md text-black' : 'text-zinc-400'}`}
-          >
-            Unirse
-          </button>
-        </div>
-
-        <form onSubmit={isRegistering ? handleRegister : handleLogin} className="space-y-6">
-          {isRegistering && (
-            <>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Nombre Completo</label>
-                <input 
-                  required
-                  placeholder="Tu nombre real"
-                  className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Email Corporativo</label>
-                <input 
-                  required
-                  type="email"
-                  placeholder="email@tuempresa.com"
-                  className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-            </>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Teléfono Verificado</label>
-            <input 
-              required
-              placeholder="Ej: 51987654321"
-              className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
+        <div className="text-center space-y-10">
+          <div className="space-y-4">
+            <h1 className="text-[44px] font-black tracking-tight text-black">Bienvenido</h1>
+            <p className="text-zinc-500 font-medium text-lg leading-tight px-4">
+              Si ya estás registrado, solo ingresa tu número móvil y disfruta.
+            </p>
           </div>
 
-          {!isRegistering && (
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Código de Acceso</label>
+          <form onSubmit={handleLogin} className="space-y-8">
+            <div className="flex gap-3">
+              <div className="flex items-center gap-2 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[24px] px-5 py-5 shrink-0">
+                <img 
+                  src="https://flagcdn.com/w40/pe.png" 
+                  alt="PE" 
+                  className="w-6 h-4 object-cover rounded-sm"
+                />
+                <span className="font-bold text-black">+51</span>
+                <ChevronDown className="w-4 h-4 text-zinc-400" />
+              </div>
               <input 
                 required
-                type="password"
-                placeholder="••••••••"
-                className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Teléfono móvil"
+                className="flex-1 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[24px] px-8 py-5 text-lg font-bold outline-none focus:ring-4 ring-black/5 transition-all text-black placeholder:text-zinc-400"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
               />
             </div>
-          )}
 
-          {error && <p className="text-red-500 text-center text-xs font-bold">{error}</p>}
+            {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
 
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="apple-button w-full py-6 text-xl shadow-2xl shadow-zinc-200"
-          >
-            {loading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (isRegistering ? 'Enviar Solicitud' : 'Entrar al MAR')}
-          </button>
-        </form>
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-black text-white py-6 rounded-[28px] text-xl font-black hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-black/10 flex items-center justify-center"
+            >
+              {loading ? (
+                <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                'Entrar'
+              )}
+            </button>
+          </form>
 
-        <p className="text-center text-xs font-bold text-zinc-400 uppercase tracking-widest">
-          {isRegistering ? 'Al unirte aceptas el código de honor MAR.' : '¿Problemas con tu acceso? Contacta a Soporte.'}
-        </p>
+          <div className="space-y-6 pt-4">
+            <p className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.2em]">
+              ACCESO RÁPIDO (DESARROLLADOR)
+            </p>
+            <div className="h-px bg-zinc-100 w-full" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium italic text-zinc-400 text-center">¿Aún no tienes cuenta?</p>
+              <button 
+                type="button"
+                className="text-lg font-black text-black hover:opacity-70 transition-opacity"
+              >
+                Comenzar ahora / Regístrate ya
+              </button>
+            </div>
+          </div>
+        </div>
       </motion.div>
     </div>
   );
