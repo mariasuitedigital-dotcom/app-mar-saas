@@ -2245,6 +2245,7 @@ function DeepFocusOverlay({ task, onClose, onComplete, onStartTimer, onStopTimer
 
 function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('+51');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -2254,12 +2255,13 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
     setLoading(true);
     
     try {
-      const { data, error: err } = await supabase.schema('mar').from('profiles').select('*').eq('phone_number', '+51' + phone).single();
+      const fullPhone = countryCode + phone;
+      const { data, error: err } = await supabase.schema('mar').from('profiles').select('*').eq('phone_number', fullPhone).single();
       
       if (err || !data) {
         setError('Acceso denegado. Verifica tu número móvil.');
       } else {
-        localStorage.setItem('mar_verified_phone', '+51' + phone);
+        localStorage.setItem('mar_verified_phone', fullPhone);
         setUser(data);
       }
     } catch (err) {
@@ -2270,35 +2272,38 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-6">
+    <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-4 md:p-6 font-sans">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-[500px] w-full bg-white rounded-[60px] p-12 md:p-16 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.05)] border border-white"
+        className="max-w-[500px] w-full bg-white rounded-[40px] md:rounded-[60px] p-8 md:p-16 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.05)] border border-white"
       >
-        <div className="text-center space-y-10">
-          <div className="space-y-4">
-            <h1 className="text-[44px] font-black tracking-tight text-black">Bienvenido</h1>
-            <p className="text-zinc-500 font-medium text-lg leading-tight px-4">
+        <div className="text-center space-y-8 md:space-y-10">
+          <div className="space-y-3 md:space-y-4">
+            <h1 className="text-3xl md:text-[44px] font-black tracking-tight text-black">Bienvenido</h1>
+            <p className="text-zinc-500 font-medium text-base md:text-lg leading-tight px-2 md:px-4">
               Si ya estás registrado, solo ingresa tu número móvil y disfruta.
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-8">
-            <div className="flex gap-3">
-              <div className="flex items-center gap-2 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[24px] px-5 py-5 shrink-0">
-                <img 
-                  src="https://flagcdn.com/w40/pe.png" 
-                  alt="PE" 
-                  className="w-6 h-4 object-cover rounded-sm"
-                />
-                <span className="font-bold text-black">+51</span>
-                <ChevronDown className="w-4 h-4 text-zinc-400" />
+          <form onSubmit={handleLogin} className="space-y-6 md:space-y-8">
+            <div className="flex gap-2 md:gap-3">
+              <div className="relative shrink-0">
+                <select 
+                  className="appearance-none bg-[#FCFCFC] border border-[#F0F0F0] rounded-[20px] md:rounded-[24px] pl-4 pr-10 py-4 md:py-5 font-bold text-black outline-none focus:ring-4 ring-black/5 transition-all cursor-pointer h-full text-base md:text-lg"
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                >
+                  {LATAM_COUNTRIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
               </div>
               <input 
                 required
                 placeholder="Teléfono móvil"
-                className="flex-1 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[24px] px-8 py-5 text-lg font-bold outline-none focus:ring-4 ring-black/5 transition-all text-black placeholder:text-zinc-400"
+                className="flex-1 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[20px] md:rounded-[24px] px-6 md:px-8 py-4 md:py-5 text-base md:text-lg font-bold outline-none focus:ring-4 ring-black/5 transition-all text-black placeholder:text-zinc-400"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
               />
@@ -2309,7 +2314,7 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-black text-white py-6 rounded-[28px] text-xl font-black hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-black/10 flex items-center justify-center"
+              className="w-full bg-black text-white py-5 md:py-6 rounded-[24px] md:rounded-[28px] text-lg md:text-xl font-black hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-black/10 flex items-center justify-center"
             >
               {loading ? (
                 <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -2319,16 +2324,22 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
             </button>
           </form>
 
-          <div className="space-y-6 pt-4">
-            <p className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.2em]">
+          <div className="space-y-6 pt-2 md:pt-4">
+            <button 
+              onClick={() => {
+                localStorage.setItem('mar_admin_auth', 'true');
+                window.location.reload();
+              }}
+              className="text-[10px] font-black text-zinc-300 hover:text-black uppercase tracking-[0.2em] transition-colors"
+            >
               ACCESO RÁPIDO (DESARROLLADOR)
-            </p>
+            </button>
             <div className="h-px bg-zinc-100 w-full" />
             <div className="space-y-1">
               <p className="text-sm font-medium italic text-zinc-400 text-center">¿Aún no tienes cuenta?</p>
               <button 
                 type="button"
-                className="text-lg font-black text-black hover:opacity-70 transition-opacity"
+                className="text-base md:text-lg font-black text-black hover:opacity-70 transition-opacity"
               >
                 Comenzar ahora / Regístrate ya
               </button>
@@ -2452,3 +2463,13 @@ const SOCIAL_LINKS = {
   facebook: 'https://facebook.com/marglobal'
 };
 const WHATSAPP_NUMBER = '51999999999';
+
+const LATAM_COUNTRIES = [
+  { code: '+51', flag: '🇵🇪', name: 'Perú' },
+  { code: '+54', flag: '🇦🇷', name: 'Argentina' },
+  { code: '+56', flag: '🇨🇱', name: 'Chile' },
+  { code: '+57', flag: '🇨🇴', name: 'Colombia' },
+  { code: '+52', flag: '🇲🇽', name: 'México' },
+  { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
+  { code: '+1', flag: '🇺🇸', name: 'USA' },
+];
