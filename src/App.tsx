@@ -44,7 +44,7 @@ import React, { useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from './lib/supabase';
 import { CONFIG } from './config';
 import type { Project, Task, Subtask } from './types';
-import { GoogleGenerativeAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
 
@@ -1954,3 +1954,571 @@ export default function App() {
     </div>
   );
 }
+
+// --- Sub-components ---
+
+function ProgressWaves({ progress }: { progress: number }) {
+  return (
+    <div className="fixed top-0 left-0 right-0 h-1.5 z-[100] bg-zinc-100 overflow-hidden">
+      <motion.div 
+        initial={{ width: 0 }}
+        animate={{ width: `${progress}%` }}
+        className="h-full bg-yellow-400 relative"
+      >
+        <motion.div 
+          animate={{ x: [0, -20, 0] }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          className="absolute top-0 right-0 h-full w-20 bg-gradient-to-r from-transparent to-white/30 skew-x-[45deg]"
+        />
+      </motion.div>
+    </div>
+  );
+}
+
+function NavItem({ active, onClick, icon, label, className = "" }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; className?: string }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1.5 transition-all group ${active ? 'text-black' : 'text-zinc-300 hover:text-zinc-500'} ${className}`}
+    >
+      <div className={`p-3 md:p-4 rounded-2xl md:rounded-3xl transition-all ${active ? 'bg-zinc-100 scale-110 shadow-inner' : 'bg-transparent group-hover:bg-zinc-50'}`}>
+        {React.cloneElement(icon as React.ReactElement, { className: "w-6 h-6 md:w-7 md:h-7" })}
+      </div>
+      <span className="text-[8px] font-black tracking-widest hidden md:block">{label}</span>
+    </button>
+  );
+}
+
+function NavButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1 p-3 rounded-2xl transition-all ${active ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+    >
+      {icon}
+      <span className="text-[8px] font-black uppercase tracking-widest">{label}</span>
+    </button>
+  );
+}
+
+function TaskItem({ task, onToggle, onSend, onAddSubtask, onToggleSubtask, onStartTimer, onStopTimer }: { 
+  task: Task; 
+  onToggle: () => void; 
+  onSend?: () => void;
+  onAddSubtask?: (title: string) => void;
+  onToggleSubtask?: (id: string) => void;
+  onStartTimer?: () => void;
+  onStopTimer?: () => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  const [newSub, setNewSub] = useState('');
+
+  return (
+    <motion.div 
+      layout
+      className={`bg-white rounded-[32px] p-6 border-2 transition-all ${task.is_completed ? 'border-zinc-50 opacity-60' : 'border-transparent hover:border-zinc-200'}`}
+    >
+      <div className="flex items-center gap-6">
+        <button 
+          onClick={onToggle}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${task.is_completed ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-zinc-50 text-zinc-300 hover:text-black'}`}
+        >
+          {task.is_completed ? <CheckCircle2 className="w-5 h-5" /> : <div className="w-5 h-5 border-2 border-current rounded-lg" />}
+        </button>
+        
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setShowDetails(!showDetails)}>
+          <h3 className={`font-bold text-lg leading-tight truncate ${task.is_completed ? 'line-through text-zinc-400' : 'text-black'}`}>
+            {task.title}
+          </h3>
+          <div className="flex items-center gap-3 mt-1">
+            {task.is_for_today && !task.is_completed && <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">HOY</span>}
+            {task.scheduled_time && <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{task.scheduled_time}</span>}
+            {task.tags?.map(tag => (
+              <span key={tag} className="text-[9px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">{tag}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+           {task.timer_start ? (
+             <button onClick={onStopTimer} className="p-3 bg-red-100 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all animate-pulse">
+               <Timer className="w-5 h-5" />
+             </button>
+           ) : !task.is_completed && onStartTimer && (
+             <button onClick={onStartTimer} className="p-3 bg-zinc-50 text-zinc-400 rounded-xl hover:bg-black hover:text-white transition-all">
+               <Timer className="w-5 h-5" />
+             </button>
+           )}
+           <button onClick={onSend} className="p-3 bg-zinc-50 text-zinc-400 rounded-xl hover:bg-[#25D366] hover:text-white transition-all">
+             <MessageSquare className="w-5 h-5" />
+           </button>
+           <button onClick={() => setShowDetails(!showDetails)} className={`p-3 bg-zinc-50 text-zinc-400 rounded-xl transition-all ${showDetails ? 'rotate-180 bg-zinc-200 text-black' : ''}`}>
+             <ChevronDown className="w-5 h-5" />
+           </button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showDetails && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="pt-8 space-y-6">
+              {task.description && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Contexto</p>
+                  <p className="text-zinc-600 font-medium leading-relaxed">{task.description}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Micro-acciones</p>
+                <div className="space-y-3">
+                  {task.subtasks?.map(sub => (
+                    <div 
+                      key={sub.id} 
+                      onClick={() => onToggleSubtask?.(sub.id)}
+                      className="flex items-center gap-3 p-4 bg-zinc-50 rounded-2xl cursor-pointer hover:bg-zinc-100 transition-colors group"
+                    >
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center border-2 transition-all ${sub.is_completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-zinc-200 bg-white group-hover:border-black'}`}>
+                        {sub.is_completed && <CheckCircle2 className="w-3 h-3" />}
+                      </div>
+                      <span className={`text-sm font-bold ${sub.is_completed ? 'line-through text-zinc-400' : 'text-zinc-700'}`}>{sub.title}</span>
+                    </div>
+                  ))}
+                  {!task.is_completed && (
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        placeholder="Nueva micro-acción..."
+                        className="flex-1 bg-zinc-50 border-none rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 ring-black"
+                        value={newSub}
+                        onChange={(e) => setNewSub(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newSub.trim()) {
+                            onAddSubtask?.(newSub);
+                            setNewSub('');
+                          }
+                        }}
+                      />
+                      <button 
+                        onClick={() => {
+                          if (newSub.trim()) {
+                            onAddSubtask?.(newSub);
+                            setNewSub('');
+                          }
+                        }}
+                        className="p-3 bg-black text-white rounded-xl"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
+  return (
+    <div className={`p-8 rounded-[40px] flex flex-col gap-6 border border-zinc-100 shadow-sm ${color}`}>
+      <div className="w-14 h-14 bg-white rounded-3xl flex items-center justify-center shadow-md">
+        {icon}
+      </div>
+      <div>
+        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">{label}</p>
+        <p className="text-4xl font-black tracking-tighter">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function DeepFocusOverlay({ task, onClose, onComplete, onStartTimer, onStopTimer }: { 
+  task: Task; 
+  onClose: () => void; 
+  onComplete: () => void;
+  onStartTimer: () => void;
+  onStopTimer: () => void;
+}) {
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [isActive, setIsActive] = useState(false);
+  
+  useEffect(() => {
+    let interval: any = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(t => t - 1);
+      }, 1000);
+    } else if (timeLeft === 0) {
+      clearInterval(interval);
+      playHaptic('success');
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft]);
+
+  const toggleTimer = () => {
+    if (!isActive) onStartTimer();
+    else onStopTimer();
+    setIsActive(!isActive);
+  };
+
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-zinc-900 text-white flex flex-col items-center justify-center p-10 overflow-hidden"
+    >
+      <div className="absolute top-10 left-10 flex items-center gap-4">
+        <Logo size="sm" light />
+        <div className="h-6 w-px bg-white/20" />
+        <span className="text-[10px] font-black tracking-widest uppercase text-zinc-500">Modo Enfoque Profundo</span>
+      </div>
+
+      <button onClick={onClose} className="absolute top-10 right-10 p-4 bg-white/5 hover:bg-white/10 rounded-full transition-all">
+        <X className="w-8 h-8" />
+      </button>
+
+      <div className="max-w-3xl w-full text-center space-y-16">
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="space-y-4"
+        >
+          <span className="text-[12px] font-black uppercase tracking-[0.4em] text-yellow-400">TRABAJANDO EN</span>
+          <h2 className="text-6xl md:text-8xl font-black tracking-tighter leading-none">{task.title}</h2>
+        </motion.div>
+
+        <div className="relative">
+          <motion.div 
+            animate={{ scale: isActive ? [1, 1.05, 1] : 1 }}
+            transition={{ duration: 4, repeat: Infinity }}
+            className="text-[160px] md:text-[240px] font-black tracking-tighter leading-none text-white/5 tabular-nums absolute inset-0 flex items-center justify-center -z-10"
+          >
+            {minutes}:{seconds.toString().padStart(2, '0')}
+          </motion.div>
+          <div className="text-[120px] md:text-[180px] font-black tracking-tighter leading-none tabular-nums relative">
+            {minutes}:{seconds.toString().padStart(2, '0')}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-6">
+          <button 
+            onClick={toggleTimer}
+            className={`w-28 h-28 rounded-full flex items-center justify-center transition-all shadow-2xl ${isActive ? 'bg-zinc-800 text-white' : 'bg-white text-black hover:scale-110'}`}
+          >
+            {isActive ? <X className="w-10 h-10" /> : <Play className="w-10 h-10 fill-current ml-2" />}
+          </button>
+          <button 
+            onClick={() => {
+              onComplete();
+              onClose();
+            }}
+            className="h-28 px-12 bg-emerald-500 text-white rounded-[40px] font-black text-xl hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-emerald-900/40"
+          >
+            FINALIZAR LOGRO
+          </button>
+        </div>
+
+        <p className="text-zinc-500 font-medium">El mundo puede esperar. Tu visión no.</p>
+      </div>
+
+      <div className="absolute bottom-10 flex gap-4">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className={`w-2 h-2 rounded-full ${i === 1 ? 'bg-yellow-400' : 'bg-white/10'}`} />
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    
+    try {
+      // Admin backdoor for demo/dev
+      if (phone === '999999999' && password === 'admin123') {
+        localStorage.setItem('mar_admin_auth', 'true');
+        window.location.reload();
+        return;
+      }
+
+      const { data, error: err } = await supabase.schema('mar').from('profiles').select('*').eq('phone_number', phone).single();
+      
+      if (err || !data) {
+        setError('Acceso denegado. Verifica tu teléfono o membresía.');
+      } else {
+        localStorage.setItem('mar_verified_phone', phone);
+        setUser(data);
+      }
+    } catch (err) {
+      setError('Error de conexión.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const { data, error: err } = await supabase.schema('mar').from('profiles').insert([{
+        full_name: fullName,
+        email,
+        phone_number: phone,
+        subscription_status: 'pending'
+      }]).select();
+
+      if (err) {
+        setError('Error al registrar. El teléfono ya podría estar en uso.');
+      } else {
+        alert('Solicitud enviada. Un administrador validará tu membresía.');
+        setIsRegistering(false);
+      }
+    } catch (err) {
+      setError('Error de conexión.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-white flex items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-yellow-400/5 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl -z-10" />
+      <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-black/5 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl -z-10" />
+      
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full space-y-10"
+      >
+        <div className="text-center space-y-4">
+          <Logo size="xl" />
+          <div className="space-y-1">
+            <h1 className="text-4xl font-black tracking-tighter">ELÉCTRICOS & ENFOCADOS</h1>
+            <p className="text-zinc-500 font-medium tracking-tight">Accede a tu centro de comando estratégico.</p>
+          </div>
+        </div>
+
+        <div className="bg-zinc-50 p-1 rounded-[40px] border border-zinc-100 flex shadow-sm">
+          <button 
+            onClick={() => setIsRegistering(false)}
+            className={`flex-1 py-4 rounded-[36px] font-black text-xs uppercase tracking-widest transition-all ${!isRegistering ? 'bg-white shadow-md text-black' : 'text-zinc-400'}`}
+          >
+            Acceder
+          </button>
+          <button 
+            onClick={() => setIsRegistering(true)}
+            className={`flex-1 py-4 rounded-[36px] font-black text-xs uppercase tracking-widest transition-all ${isRegistering ? 'bg-white shadow-md text-black' : 'text-zinc-400'}`}
+          >
+            Unirse
+          </button>
+        </div>
+
+        <form onSubmit={isRegistering ? handleRegister : handleLogin} className="space-y-6">
+          {isRegistering && (
+            <>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Nombre Completo</label>
+                <input 
+                  required
+                  placeholder="Tu nombre real"
+                  className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Email Corporativo</label>
+                <input 
+                  required
+                  type="email"
+                  placeholder="email@tuempresa.com"
+                  className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Teléfono Verificado</label>
+            <input 
+              required
+              placeholder="Ej: 51987654321"
+              className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+
+          {!isRegistering && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 ml-4">Código de Acceso</label>
+              <input 
+                required
+                type="password"
+                placeholder="••••••••"
+                className="w-full bg-zinc-50 border-none rounded-[28px] px-8 py-6 text-lg font-bold outline-none focus:ring-4 ring-yellow-400/20 transition-all"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          )}
+
+          {error && <p className="text-red-500 text-center text-xs font-bold">{error}</p>}
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="apple-button w-full py-6 text-xl shadow-2xl shadow-zinc-200"
+          >
+            {loading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (isRegistering ? 'Enviar Solicitud' : 'Entrar al MAR')}
+          </button>
+        </form>
+
+        <p className="text-center text-xs font-bold text-zinc-400 uppercase tracking-widest">
+          {isRegistering ? 'Al unirte aceptas el código de honor MAR.' : '¿Problemas con tu acceso? Contacta a Soporte.'}
+        </p>
+      </motion.div>
+    </div>
+  );
+}
+
+function Logo({ size = 'md', light = false }: { size?: 'sm' | 'md' | 'lg' | 'xl'; light?: boolean }) {
+  const sizes = {
+    sm: 'w-8 h-8 rounded-xl',
+    md: 'w-12 h-12 rounded-2xl',
+    lg: 'w-16 h-16 rounded-[24px]',
+    xl: 'w-24 h-24 rounded-[32px]'
+  };
+  
+  return (
+    <div className={`${sizes[size]} ${light ? 'bg-white text-black' : 'bg-black text-white'} flex items-center justify-center mx-auto shadow-xl`}>
+      <Lightbulb className={`${size === 'xl' ? 'w-12 h-12' : size === 'lg' ? 'w-8 h-8' : 'w-6 h-6'} text-yellow-400 fill-yellow-400`} />
+    </div>
+  );
+}
+
+function GuideStep({ num, text }: { num: string; text: string }) {
+  return (
+    <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+      <div className="w-8 h-8 bg-black text-white rounded-lg flex items-center justify-center font-black text-xs">{num}</div>
+      <p className="text-sm font-bold text-zinc-700">{text}</p>
+    </div>
+  );
+}
+
+function OnboardingStep({ number, title, desc }: { number: string; title: string; desc: string }) {
+  return (
+    <div className="flex gap-5 p-6 rounded-3xl hover:bg-zinc-50 transition-colors">
+      <div className="w-12 h-12 bg-zinc-100 rounded-2xl flex items-center justify-center text-zinc-400 shrink-0 font-black text-xl">{number}</div>
+      <div className="space-y-1">
+        <h4 className="font-bold text-black">{title}</h4>
+        <p className="text-xs text-zinc-400 leading-relaxed font-medium">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+function LayoutGrid(props: any) {
+  return (
+    <svg 
+      {...props} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="14" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
+    </svg>
+  );
+}
+
+function Instagram(props: any) {
+  return (
+    <svg 
+      {...props} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+    </svg>
+  );
+}
+
+function Facebook(props: any) {
+  return (
+    <svg 
+      {...props} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
+
+function Bell(props: any) {
+  return (
+    <svg 
+      {...props} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
+// Constants
+const SOCIAL_LINKS = {
+  instagram: 'https://instagram.com/mar_global',
+  facebook: 'https://facebook.com/marglobal'
+};
+const WHATSAPP_NUMBER = '51999999999';
