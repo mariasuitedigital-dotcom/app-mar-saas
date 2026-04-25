@@ -2327,10 +2327,15 @@ function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
           <div className="space-y-6 pt-2 md:pt-4">
             <button 
               onClick={() => {
-                localStorage.setItem('mar_admin_auth', 'true');
-                window.location.reload();
+                const pass = window.prompt('Introduce la clave de administrador:');
+                if (pass === 'admin2024') {
+                  localStorage.setItem('mar_admin_auth', 'true');
+                  window.location.reload();
+                } else if (pass !== null) {
+                  alert('Clave incorrecta');
+                }
               }}
-              className="text-[10px] font-black text-zinc-300 hover:text-black uppercase tracking-[0.2em] transition-colors"
+              className="text-[10px] text-zinc-300 hover:text-black font-black uppercase tracking-[0.2em] transition-colors"
             >
               ACCESO RÁPIDO (DESARROLLADOR)
             </button>
