@@ -25,11 +25,11 @@
 
 @layer components {
   .apple-button {
-    @apply bg-black text-white px-6 py-4 rounded-[22px] font-bold text-base transition-all active:scale-[0.97] hover:bg-zinc-800 disabled:opacity-50 flex items-center justify-center gap-2;
+    @apply bg-black text-white px-4 py-3 rounded-[16px] md:rounded-[20px] font-bold text-xs md:text-sm transition-all active:scale-[0.97] hover:bg-zinc-800 disabled:opacity-50 flex items-center justify-center gap-2;
   }
   
   .apple-button-secondary {
-    @apply bg-white text-black border border-border px-6 py-4 rounded-[22px] font-bold text-base transition-all active:scale-[0.97] hover:bg-zinc-50;
+    @apply bg-white text-black border border-border px-4 py-3 rounded-[16px] md:rounded-[20px] font-bold text-xs md:text-sm transition-all active:scale-[0.97] hover:bg-zinc-50;
   }
 
   .glass-card {
@@ -37,26 +37,43 @@
   }
 
   .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 12px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 80px);
   }
 
   .bento-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    grid-auto-rows: minmax(280px, auto);
-    gap: 16px;
+    grid-auto-rows: minmax(auto, auto);
+    gap: 12px;
   }
 
   .card-bento {
-    @apply bg-card rounded-[32px] p-6 border border-border flex flex-col transition-all duration-300;
+    @apply bg-card rounded-[20px] md:rounded-[28px] p-4 md:p-5 border border-border flex flex-col transition-all duration-300;
   }
 
   .card-bento:hover {
-    @apply border-text-main shadow-sm;
+    @apply border-black/10 shadow-md;
   }
 
   .card-title-bento {
-    @apply text-[10px] uppercase tracking-[0.15em] text-text-sub font-bold mb-4 flex justify-between items-center;
+    @apply text-[9px] uppercase tracking-[0.15em] text-text-sub font-bold mb-3 flex justify-between items-center;
+  }
+
+  .mobile-nav {
+    @apply fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-zinc-100 flex justify-around items-center h-[72px] z-[50] pb-[env(safe-area-inset-bottom)];
+  }
+
+  .mobile-nav-item {
+    @apply flex flex-col items-center justify-center gap-1 transition-all active:scale-90 text-zinc-400 relative py-1;
+  }
+
+  .mobile-nav-item.active {
+    @apply text-black;
+  }
+
+  .mobile-nav-item.active::after {
+    content: '';
+    @apply absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-black rounded-full;
   }
 }
 
