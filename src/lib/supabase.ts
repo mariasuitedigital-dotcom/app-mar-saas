@@ -1,14 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
+import { CONFIG } from '../config';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+if (!CONFIG.supabase.url || !CONFIG.supabase.anonKey) {
+  console.warn('Supabase configuration is missing. Check your environment variables.');
+}
 
 export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey,
-  {
-    db: {
-      schema: 'mar'
-    }
-  }
+  CONFIG.supabase.url,
+  CONFIG.supabase.anonKey
 );
