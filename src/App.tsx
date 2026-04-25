@@ -48,6 +48,35 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
 
+const LATAM_COUNTRIES = [
+  { code: '+51', name: 'Perú', flag: '🇵🇪' },
+  { code: '+54', name: 'Argentina', flag: '🇦🇷' },
+  { code: '+56', name: 'Chile', flag: '🇨🇱' },
+  { code: '+57', name: 'Colombia', flag: '🇨🇴' },
+  { code: '+52', name: 'México', flag: '🇲🇽' },
+  { code: '+591', name: 'Bolivia', flag: '🇧🇴' },
+  { code: '+55', name: 'Brasil', flag: '🇧🇷' },
+  { code: '+506', name: 'Costa Rica', flag: '🇨🇷' },
+  { code: '+53', name: 'Cuba', flag: '🇨🇺' },
+  { code: '+593', name: 'Ecuador', flag: '🇪🇨' },
+  { code: '+503', name: 'El Salvador', flag: '🇸🇻' },
+  { code: '+502', name: 'Guatemala', flag: '🇬🇹' },
+  { code: '+504', name: 'Honduras', flag: '🇭🇳' },
+  { code: '+505', name: 'Nicaragua', flag: '🇳🇮' },
+  { code: '+507', name: 'Panamá', flag: '🇵🇦' },
+  { code: '+595', name: 'Paraguay', flag: '🇵🇾' },
+  { code: '+1', name: 'Puerto Rico', flag: '🇵🇷' },
+  { code: '+1', name: 'Rep. Dominicana', flag: '🇩🇴' },
+  { code: '+598', name: 'Uruguay', flag: '🇺🇾' },
+  { code: '+58', name: 'Venezuela', flag: '🇻🇪' },
+];
+
+const SOCIAL_LINKS = {
+  instagram: 'https://instagram.com/mar_global',
+  facebook: 'https://facebook.com/marglobal'
+};
+const WHATSAPP_NUMBER = '51999999999';
+
 const playHaptic = (type: 'click' | 'success' | 'error' | 'focus') => {
   const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   const oscillator = audioCtx.createOscillator();
@@ -2243,117 +2272,484 @@ function DeepFocusOverlay({ task, onClose, onComplete, onStartTimer, onStopTimer
   );
 }
 
-function Portal({ user, setUser }: { user: any; setUser: (u: any) => void }) {
+function Portal({ user, setUser }: { user: any, setUser: (user: any) => void }) {
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+51');
-  const [error, setError] = useState('');
+  const [otp, setOtp] = useState('');
+  const [step, setStep] = useState<'landing' | 'register' | 'payment' | 'success' | 'login' | 'profile-setup'>('login');
+  const [formData, setFormData] = useState({ name: '', phone: '', occupation: 'Estudiante', otherOccupation: '' });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [logoClicks, setLogoClicks] = useState(0);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [method, setMethod] = useState<'yape' | 'bcp' | null>(null);
+  const [paymentCode, setPaymentCode] = useState('');
+  const clickTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const [otpSent, setOtpSent] = useState(false);
+
+  const handleLogoClick = () => {
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    
+    const newClicks = logoClicks + 1;
+    setLogoClicks(newClicks);
+    
+    if (newClicks >= 3) {
+      setShowAdminLogin(true);
+      setLogoClicks(0);
+    } else {
+      clickTimer.current = setTimeout(() => {
+        setLogoClicks(0);
+      }, 2000);
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    if (adminPassword === 'admin2024') {
+      localStorage.setItem('mar_admin_auth', 'true');
+      window.location.reload();
+    } else {
+      setError('Contraseña administrativa incorrecta');
+      setAdminPassword('');
+    }
+  };
+
+  const handleRequestOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phone) {
+      setError('Ingresa tu número de WhatsApp');
+      return;
+    }
+
     setLoading(true);
+    setError(null);
     
     try {
       const fullPhone = countryCode + phone;
-      const { data, error: err } = await supabase.schema('mar').from('profiles').select('*').eq('phone_number', fullPhone).single();
       
-      if (err || !data) {
-        setError('Acceso denegado. Verifica tu número móvil.');
-      } else {
-        localStorage.setItem('mar_verified_phone', fullPhone);
-        setUser(data);
+      const { data: profile, error: profileError } = await supabase
+        .schema('mar')
+        .from('profiles')
+        .select('*')
+        .eq('phone_number', fullPhone)
+        .maybeSingle();
+      
+      if (!profile) {
+        setError('Este número no está registrado. Por favor, regístrate primero en la página principal.');
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      setError('Error de conexión.');
+
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      
+      const { error: otpError } = await supabase
+        .schema('mar')
+        .from('otps')
+        .insert([{
+          phone_number: fullPhone,
+          code: code,
+          expires_at: new Date(Date.now() + 10 * 60000).toISOString()
+        }]);
+
+      if (otpError) throw otpError;
+
+      const n8nUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://webhook.red51.site/webhook/mar-otp';
+      
+      try {
+        await fetch(n8nUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: fullPhone.replace('+', ''),
+            otp: code,
+            name: 'Usuario MAR'
+          })
+        });
+      } catch (webhookErr) {
+        console.error('Error enviando a N8N:', webhookErr);
+      }
+
+      localStorage.setItem('mar_pending_phone', fullPhone);
+      setOtpSent(true);
+      
+      if (import.meta.env.DEV) {
+        alert(`CÓDIGO (Simulación): ${code}`);
+      }
+    } catch (err: any) {
+      console.error('OTP request error:', err);
+      setError('No se pudo enviar el código. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-4 md:p-6 font-sans">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-[500px] w-full bg-white rounded-[40px] md:rounded-[60px] p-8 md:p-16 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.05)] border border-white"
-      >
-        <div className="text-center space-y-8 md:space-y-10">
-          <div className="space-y-3 md:space-y-4">
-            <h1 className="text-3xl md:text-[44px] font-black tracking-tight text-black">Bienvenido</h1>
-            <p className="text-zinc-500 font-medium text-base md:text-lg leading-tight px-2 md:px-4">
-              Si ya estás registrado, solo ingresa tu número móvil y disfruta.
-            </p>
-          </div>
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp) {
+      setError('Ingresa el código enviado');
+      return;
+    }
 
-          <form onSubmit={handleLogin} className="space-y-6 md:space-y-8">
-            <div className="flex gap-2 md:gap-3">
-              <div className="relative shrink-0">
-                <select 
-                  className="appearance-none bg-[#FCFCFC] border border-[#F0F0F0] rounded-[20px] md:rounded-[24px] pl-4 pr-10 py-4 md:py-5 font-bold text-black outline-none focus:ring-4 ring-black/5 transition-all cursor-pointer h-full text-base md:text-lg"
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                >
-                  {LATAM_COUNTRIES.map(c => (
-                    <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fullPhone = countryCode + phone || localStorage.getItem('mar_pending_phone');
+      
+      const { data, error: verifyError } = await supabase
+        .schema('mar')
+        .from('otps')
+        .select('*')
+        .eq('phone_number', fullPhone)
+        .eq('code', otp)
+        .eq('is_verified', false)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (verifyError || !data) {
+        throw new Error('Código inválido o expirado');
+      }
+
+      await supabase.schema('mar').from('otps').update({ is_verified: true }).eq('id', data.id);
+
+      const { data: profile } = await supabase
+        .schema('mar')
+        .from('profiles')
+        .select('*')
+        .eq('phone_number', fullPhone)
+        .single();
+
+      if (profile) {
+        localStorage.setItem('mar_verified_phone', fullPhone);
+        setUser(profile);
+        
+        if (!profile.photo_url) {
+          setStep('profile-setup');
+        } else {
+          localStorage.setItem('mar_auth', 'true');
+          window.location.reload();
+        }
+      } else {
+        setStep('register');
+      }
+    } catch (err: any) {
+      console.error('Verification error:', err);
+      setError(err.message || 'Error al verificar el código');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const { error: supabaseError } = await supabase
+        .schema('mar')
+        .from('profiles')
+        .insert([{
+          id: crypto.randomUUID(),
+          full_name: formData.name,
+          phone_number: countryCode + formData.phone,
+          occupation: formData.occupation,
+          other_occupation: formData.otherOccupation,
+          subscription_status: 'pending',
+          created_at: new Date().toISOString()
+        }]);
+
+      if (supabaseError) {
+        console.warn('Supabase profile creation failed:', supabaseError.message);
+      }
+
+      localStorage.setItem('mar_verified_phone', countryCode + formData.phone);
+      setStep('payment');
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      setStep('payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleProfileComplete = async () => {
+    setLoading(true);
+    try {
+      const { error: updateError } = await supabase
+        .schema('mar')
+        .from('profiles')
+        .update({ 
+          photo_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.full_name || 'user'}` 
+        })
+        .eq('phone_number', user?.phone_number);
+
+      if (updateError) throw updateError;
+
+      localStorage.setItem('mar_auth', 'true');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Error completing profile:', err);
+      setError('No se pudo guardar el perfil.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === 'landing') {
+    return (
+      <div className="min-h-screen bg-white font-sans overflow-x-hidden text-zinc-900 w-full">
+        <nav className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md z-[100] border-b border-zinc-100 flex justify-between items-center px-6 py-4">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white shadow-lg">
+              <Lightbulb className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+            </div>
+            <span className="text-xl font-bold tracking-tighter">MAR</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setStep('login')}
+              className="text-sm font-bold text-zinc-600 hover:text-black transition-colors"
+            >
+              Entrar
+            </button>
+            <button 
+              onClick={() => setStep('register')}
+              className="bg-black text-white px-5 py-2 rounded-xl text-sm font-bold hover:bg-zinc-800 transition-all shadow-lg"
+            >
+              Comenzar Ahora
+            </button>
+          </div>
+        </nav>
+
+        <section className="relative pt-32 pb-24 px-6 flex flex-col items-center text-center">
+          <motion.h1 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="text-5xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9] max-w-4xl"
+          >
+            Ordena tu caos. <br />
+            Configura tu <span className="text-transparent bg-clip-text bg-gradient-to-r from-zinc-700 via-black to-zinc-700">éxito.</span>
+          </motion.h1>
+
+          <p className="text-lg md:text-xl font-medium text-zinc-500 max-w-2xl mx-auto leading-relaxed mb-12">
+            MAR es el sistema inteligente para capturar ideas, gestionar proyectos y dominar tus tareas. 
+            Menos ruido mental, más ejecución real.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
+            <button 
+              onClick={() => setStep('register')}
+              className="flex-1 bg-black text-white px-8 py-5 rounded-2xl font-bold text-lg hover:bg-zinc-800 transition-all shadow-xl flex items-center justify-center gap-2 group"
+            >
+              Comenzar Gratis
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (step === 'login') {
+    return (
+      <div className="min-h-screen bg-[#F9F9F9] flex items-center justify-center p-4 md:p-6 font-sans w-full">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-[500px] w-full bg-white rounded-[40px] md:rounded-[60px] p-8 md:p-16 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.05)] border border-white relative"
+        >
+          <button 
+            onClick={() => setStep('landing')}
+            className="absolute top-6 left-6 md:top-8 md:left-8 flex items-center gap-2 text-zinc-400 hover:text-black transition-colors font-bold"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="hidden md:inline">Regresar</span>
+          </button>
+
+          <div className="text-center space-y-8 md:space-y-10">
+            <div className="space-y-3 md:space-y-4">
+              <h1 className="text-3xl md:text-[44px] font-black tracking-tight text-black">Bienvenido</h1>
+              <p className="text-zinc-500 font-medium text-base md:text-lg leading-tight px-2 md:px-4">
+                Si ya estás registrado, solo ingresa tu número móvil y disfruta.
+              </p>
+            </div>
+
+            <form onSubmit={handleRequestOtp} className="space-y-6 md:space-y-8">
+              <div className="flex gap-2 md:gap-3">
+                <div className="relative shrink-0">
+                  <select 
+                    className="appearance-none bg-[#FCFCFC] border border-[#F0F0F0] rounded-[20px] md:rounded-[24px] pl-4 pr-10 py-4 md:py-5 font-bold text-black outline-none focus:ring-4 ring-black/5 transition-all cursor-pointer h-full text-base md:text-lg"
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                  >
+                    {LATAM_COUNTRIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+                </div>
+                <input 
+                  required
+                  placeholder="Teléfono móvil"
+                  className="flex-1 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[20px] md:rounded-[24px] px-6 md:px-8 py-4 md:py-5 text-base md:text-lg font-bold outline-none focus:ring-4 ring-black/5 transition-all text-black placeholder:text-zinc-400"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
               </div>
+
+              {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
+
+              <button 
+                type="submit" 
+                disabled={loading}
+                className="w-full bg-black text-white py-5 md:py-6 rounded-[24px] md:rounded-[28px] text-lg md:text-xl font-black hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-black/10 flex items-center justify-center"
+              >
+                {loading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Entrar'}
+              </button>
+            </form>
+
+            <div className="space-y-6 pt-2 md:pt-4">
+              <button 
+                onClick={() => {
+                  const pass = window.prompt('Introduce la clave de administrador:');
+                  if (pass === 'admin2024') {
+                    localStorage.setItem('mar_admin_auth', 'true');
+                    window.location.reload();
+                  } else if (pass !== null) {
+                    alert('Clave incorrecta');
+                  }
+                }}
+                className="text-[10px] text-zinc-300 hover:text-black font-black uppercase tracking-[0.2em] transition-colors"
+              >
+                ACCESO RÁPIDO (DESARROLLADOR)
+              </button>
+              <div className="h-px bg-zinc-100 w-full" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium italic text-zinc-400 text-center">¿Aún no tienes cuenta?</p>
+                <button 
+                  onClick={() => setStep('landing')}
+                  className="text-base md:text-lg font-black text-black hover:opacity-70 transition-opacity"
+                >
+                  Comenzar ahora / Regístrate ya
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (step === 'register') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-6 font-sans relative w-full">
+        <button 
+          onClick={() => setStep('landing')}
+          className="absolute top-8 left-8 flex items-center gap-2 text-zinc-400 hover:text-black transition-colors font-bold"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Regresar</span>
+        </button>
+        <motion.form 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          onSubmit={handleRegister}
+          className="max-w-md w-full space-y-5 bg-zinc-50 p-10 rounded-[48px]"
+        >
+          <h2 className="text-3xl font-black tracking-tighter text-center mb-4">Crea tu cuenta</h2>
+          <div className="space-y-4">
+            <input 
+              required
+              placeholder="Nombre Completo"
+              className="w-full bg-white border-none rounded-[22px] px-6 py-5 outline-none focus:ring-2 ring-black font-bold"
+              value={formData.name}
+              onChange={e => setFormData({...formData, name: e.target.value})}
+            />
+            <div className="flex gap-2">
+              <select 
+                className="bg-white border-none rounded-[22px] px-4 py-5 outline-none focus:ring-2 ring-black font-bold"
+                value={countryCode}
+                onChange={e => setCountryCode(e.target.value)}
+              >
+                {LATAM_COUNTRIES.map(c => (
+                  <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                ))}
+              </select>
               <input 
                 required
-                placeholder="Teléfono móvil"
-                className="flex-1 bg-[#FCFCFC] border border-[#F0F0F0] rounded-[20px] md:rounded-[24px] px-6 md:px-8 py-4 md:py-5 text-base md:text-lg font-bold outline-none focus:ring-4 ring-black/5 transition-all text-black placeholder:text-zinc-400"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                type="tel"
+                placeholder="Teléfono"
+                className="flex-1 bg-white border-none rounded-[22px] px-6 py-5 outline-none focus:ring-2 ring-black font-bold"
+                value={formData.phone}
+                onChange={e => setFormData({...formData, phone: e.target.value})}
               />
             </div>
-
-            {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
-
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="w-full bg-black text-white py-5 md:py-6 rounded-[24px] md:rounded-[28px] text-lg md:text-xl font-black hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-black/10 flex items-center justify-center"
+            <select 
+              className="w-full bg-white border-none rounded-[22px] px-6 py-5 outline-none focus:ring-2 ring-black font-bold"
+              value={formData.occupation}
+              onChange={e => setFormData({...formData, occupation: e.target.value})}
             >
-              {loading ? (
-                <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                'Entrar'
-              )}
-            </button>
-          </form>
-
-          <div className="space-y-6 pt-2 md:pt-4">
-            <button 
-              onClick={() => {
-                const pass = window.prompt('Introduce la clave de administrador:');
-                if (pass === 'admin2024') {
-                  localStorage.setItem('mar_admin_auth', 'true');
-                  window.location.reload();
-                } else if (pass !== null) {
-                  alert('Clave incorrecta');
-                }
-              }}
-              className="text-[10px] text-zinc-300 hover:text-black font-black uppercase tracking-[0.2em] transition-colors"
-            >
-              ACCESO RÁPIDO (DESARROLLADOR)
-            </button>
-            <div className="h-px bg-zinc-100 w-full" />
-            <div className="space-y-1">
-              <p className="text-sm font-medium italic text-zinc-400 text-center">¿Aún no tienes cuenta?</p>
-              <button 
-                type="button"
-                className="text-base md:text-lg font-black text-black hover:opacity-70 transition-opacity"
-              >
-                Comenzar ahora / Regístrate ya
-              </button>
-            </div>
+              <option value="Estudiante">Estudiante</option>
+              <option value="Emprendedor">Emprendedor</option>
+              <option value="Creador">Creador</option>
+              <option value="Freelancer">Freelancer</option>
+              <option value="Otro">Otro</option>
+            </select>
           </div>
+          <button className="w-full bg-black text-white py-5 rounded-2xl font-black text-lg hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl">Siguiente</button>
+        </motion.form>
+      </div>
+    );
+  }
+
+  if (step === 'payment') {
+    return (
+      <div className="min-h-screen bg-white p-6 font-sans flex flex-col items-center justify-center relative w-full">
+        <button 
+          onClick={() => setStep('landing')}
+          className="absolute top-8 left-8 flex items-center gap-2 text-zinc-400 hover:text-black transition-colors font-bold"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Regresar</span>
+        </button>
+        <div className="max-w-md w-full space-y-8 bg-zinc-50 p-10 rounded-[56px] shadow-sm border border-zinc-100 text-center">
+            <h2 className="text-3xl font-black tracking-tighter">Portal de Pago</h2>
+            <p className="text-zinc-500 font-medium italic">Escanea el código para activar tu acceso</p>
+            <div className="bg-white p-8 rounded-[40px] shadow-sm flex items-center justify-center">
+                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=YapeMAR`} alt="QR" className="w-48 h-48" />
+            </div>
+            <input 
+                placeholder="Código de Operación"
+                className="w-full bg-white border-none rounded-[22px] px-6 py-5 outline-none font-black text-center text-lg shadow-sm"
+                value={paymentCode}
+                onChange={e => setPaymentCode(e.target.value)}
+            />
+            <button onClick={() => setStep('success')} className="w-full bg-black text-white py-5 rounded-2xl font-black text-lg">Confirmar Pago</button>
         </div>
-      </motion.div>
-    </div>
-  );
+      </div>
+    );
+  }
+
+  if (step === 'success') {
+    return (
+       <div className="min-h-screen bg-white flex items-center justify-center p-6 text-center w-full">
+         <div className="max-w-md space-y-6">
+           <div className="w-20 h-20 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-xl">
+             <CheckCircle2 className="w-10 h-10" />
+           </div>
+           <h2 className="text-3xl font-black tracking-tighter">¡Registro Exitoso!</h2>
+           <p className="text-zinc-500 font-medium leading-relaxed">Tu acceso está siendo activado. En unos minutos podrás entrar con tu número móvil.</p>
+           <button onClick={() => setStep('login')} className="apple-button w-full">Ir al Login</button>
+         </div>
+       </div>
+    );
+  }
+
+  return null;
 }
 
 function Logo({ size = 'md', light = false }: { size?: 'sm' | 'md' | 'lg' | 'xl'; light?: boolean }) {
@@ -2368,6 +2764,113 @@ function Logo({ size = 'md', light = false }: { size?: 'sm' | 'md' | 'lg' | 'xl'
     <div className={`${sizes[size]} ${light ? 'bg-white text-black' : 'bg-black text-white'} flex items-center justify-center mx-auto shadow-xl`}>
       <Lightbulb className={`${size === 'xl' ? 'w-12 h-12' : size === 'lg' ? 'w-8 h-8' : 'w-6 h-6'} text-yellow-400 fill-yellow-400`} />
     </div>
+  );
+}
+
+function PillarCard({ icon, title, desc, color, index }: { icon: ReactNode, title: string, desc: string, color: string, index: number }) {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay: index * 0.1 }}
+      className={`${color} p-8 rounded-[32px] shadow-sm flex flex-col gap-4 group hover:scale-[1.02] transition-transform`}
+    >
+      <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white text-black shadow-sm group-hover:bg-yellow-400 transition-colors">
+        {icon}
+      </div>
+      <h3 className="text-xl font-bold">{title}</h3>
+      <p className="text-sm text-zinc-500 leading-relaxed">{desc}</p>
+    </motion.div>
+  );
+}
+
+function PersonaItem({ icon, title, desc }: { icon: ReactNode, title: string, desc: string }) {
+  return (
+    <motion.div 
+      variants={{
+        hidden: { opacity: 0, x: -30 },
+        visible: { opacity: 1, x: 0 }
+      }}
+      whileHover={{ 
+        scale: 1.02,
+        x: 10,
+        backgroundColor: "rgba(255, 255, 255, 1)",
+        boxShadow: "0 20px 40px rgba(0,0,0,0.05)"
+      }}
+      className="flex gap-6 p-6 rounded-[32px] transition-all border border-transparent hover:border-zinc-100 group/item cursor-pointer group-hover/list:opacity-50 hover:!opacity-100 hover:z-10"
+    >
+      <motion.div 
+        whileHover={{ rotate: [-10, 10, -10, 0], scale: 1.1 }}
+        className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm text-zinc-400 shrink-0 group-hover/item:text-yellow-500 group-hover/item:shadow-lg group-hover/item:shadow-yellow-100 transition-all border border-zinc-50"
+      >
+        {icon}
+      </motion.div>
+      <div>
+        <h4 className="font-black text-xl mb-1 group-hover/item:text-black transition-colors">{title}</h4>
+        <p className="text-base text-zinc-500 font-medium leading-relaxed group-hover/item:text-zinc-600 transition-colors">{desc}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+function FlowSection({ icon, title, desc, steps, color, imageUrl, reverse }: { 
+  icon: ReactNode, 
+  title: string, 
+  desc: string, 
+  steps: string[], 
+  color: string,
+  imageUrl: string,
+  reverse?: boolean
+}) {
+  const colors: Record<string, string> = {
+    amber: 'bg-amber-50 text-amber-600 border-amber-100',
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100'
+  };
+  
+  const stepColors: Record<string, string> = {
+    amber: 'bg-amber-500 shadow-amber-200',
+    blue: 'bg-blue-500 shadow-blue-200',
+    emerald: 'bg-emerald-500 shadow-emerald-200'
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className={`flex flex-col ${reverse ? 'lg:flex-row-reverse' : 'lg:flex-row'} gap-12 items-center`}
+    >
+      <div className="flex-1 space-y-8">
+        <div className={`w-16 h-16 rounded-3xl flex items-center justify-center border-2 ${colors[color]}`}>
+          {icon}
+        </div>
+        <div className="space-y-4">
+          <h3 className="text-3xl md:text-4xl font-black tracking-tighter">{title}</h3>
+          <p className="text-zinc-500 font-medium leading-relaxed text-lg">{desc}</p>
+        </div>
+        <div className="space-y-4">
+          {steps.map((step, i) => (
+            <div key={i} className="flex gap-4 items-start translate-x-0 hover:translate-x-2 transition-transform cursor-default">
+              <div className={`mt-1 w-5 h-5 rounded-full ${stepColors[color]} flex items-center justify-center text-[10px] font-black text-white shrink-0 shadow-lg`}>
+                {i + 1}
+              </div>
+              <p className="text-zinc-700 font-bold text-base leading-tight">{step}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 w-full">
+        <motion.img 
+          whileHover={{ scale: 1.05, rotate: reverse ? -1 : 1 }}
+          src={imageUrl} 
+          alt={title} 
+          className="w-full h-auto rounded-[40px] shadow-2xl border border-zinc-100"
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    </motion.div>
   );
 }
 
@@ -2445,6 +2948,7 @@ function Facebook(props: any) {
   );
 }
 
+// Recordatorio
 function Bell(props: any) {
   return (
     <svg 
@@ -2462,19 +2966,3 @@ function Bell(props: any) {
   );
 }
 
-// Constants
-const SOCIAL_LINKS = {
-  instagram: 'https://instagram.com/mar_global',
-  facebook: 'https://facebook.com/marglobal'
-};
-const WHATSAPP_NUMBER = '51999999999';
-
-const LATAM_COUNTRIES = [
-  { code: '+51', flag: '🇵🇪', name: 'Perú' },
-  { code: '+54', flag: '🇦🇷', name: 'Argentina' },
-  { code: '+56', flag: '🇨🇱', name: 'Chile' },
-  { code: '+57', flag: '🇨🇴', name: 'Colombia' },
-  { code: '+52', flag: '🇲🇽', name: 'México' },
-  { code: '+593', flag: '🇪🇨', name: 'Ecuador' },
-  { code: '+1', flag: '🇺🇸', name: 'USA' },
-];
