@@ -231,6 +231,8 @@ export default function App() {
 
     async function fetchData() {
       try {
+        const currentUserId = user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id;
+        
         // Fetch or Create Profile
         if (user.phone && !user.subscription_status) {
           const { data: profile } = await supabase
@@ -258,8 +260,8 @@ export default function App() {
           }
         }
 
-        const { data: projectsData } = await supabase.schema('mar').from('projects').select('*').eq('user_id', user.id);
-        const { data: tasksData } = await supabase.schema('mar').from('tasks').select('*').eq('user_id', user.id);
+        const { data: projectsData } = await supabase.schema('mar').from('projects').select('*').eq('user_id', currentUserId);
+        const { data: tasksData } = await supabase.schema('mar').from('tasks').select('*').eq('user_id', currentUserId);
         
         if (projectsData) setProjects(projectsData);
         if (tasksData) setTasks(tasksData);
@@ -352,8 +354,18 @@ export default function App() {
     setTasks(prev => {
       const updated = prev.map(t => {
         if (t.id === id) {
-          if (!t.is_completed) playHaptic('success');
-          return { ...t, is_completed: !t.is_completed };
+          const newStatus = !t.is_completed;
+          if (newStatus) playHaptic('success');
+          
+          // Persist to Supabase
+          supabase.schema('mar').from('tasks')
+            .update({ is_completed: newStatus, status: newStatus ? 'done' : 'todo' })
+            .eq('id', id)
+            .then(({ error }) => {
+              if (error) console.error('Error toggling task:', error.message);
+            });
+
+          return { ...t, is_completed: newStatus, status: newStatus ? 'done' : 'todo' };
         }
         return t;
       });
@@ -387,7 +399,7 @@ export default function App() {
       const newTask = {
         title: result.title,
         description: result.description || '',
-        user_id: user.id,
+        user_id: user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id,
         project_id: selectedProjectId,
         due_date: result.is_for_today ? new Date().toISOString() : null,
         is_for_today: result.is_for_today ?? true,
@@ -479,10 +491,37 @@ export default function App() {
     }
   };
 
-  const deleteProject = (id: string) => {
+  const deleteTask = async (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+    const { error } = await supabase.schema('mar').from('tasks').delete().eq('id', id);
+    if (error) console.error('Error deleting task:', error.message);
+  };
+
+  const downloadLogo = () => {
+    const svgContent = `<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="128" fill="black"/>
+      <circle cx="256" cy="232" r="90" fill="#EAB308"/>
+      <path d="M256 140C204.085 140 162 182.085 162 234C162 266.115 178.082 294.469 202.348 311.353V348C202.348 359.046 211.302 368 222.348 368H289.652C300.698 368 309.652 359.046 309.652 348V311.353C333.918 294.469 350 266.115 350 234C350 182.085 307.915 140 256 140Z" fill="#EAB308"/>
+      <rect x="222" y="388" width="67.304" height="20.191" rx="10.095" fill="#EAB308"/>
+      <text x="256" y="470" font-family="system-ui, sans-serif" font-size="48" font-weight="900" fill="white" text-anchor="middle" style="letter-spacing: 4px;">MAR</text>
+    </svg>`;
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'mar-logo-official.svg';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    playHaptic('success');
+  };
+
+  const deleteProject = async (id: string) => {
     setProjects(prev => prev.filter(p => p.id !== id));
     setTasks(prev => prev.filter(t => t.project_id !== id));
     setViewingProject(null);
+    const { error } = await supabase.schema('mar').from('projects').delete().eq('id', id);
+    if (error) console.error('Error deleting project:', error.message);
   };
 
   const addReminder = async () => {
@@ -490,7 +529,7 @@ export default function App() {
     
     const newTask = {
       title: `🔔 Recordatorio: ${reminderText}`,
-      user_id: user.id,
+      user_id: user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id,
       project_id: null,
       due_date: new Date().toISOString(),
       is_for_today: true,
@@ -533,11 +572,20 @@ export default function App() {
   };
 
   const updateTaskStatus = (id: string, status: 'todo' | 'in_progress' | 'done') => {
+    const isCompleted = status === 'done';
     setTasks(prev => prev.map(t => t.id === id ? { 
       ...t, 
       status, 
-      is_completed: status === 'done' 
+      is_completed: isCompleted 
     } : t));
+
+    // Persist to Supabase
+    supabase.schema('mar').from('tasks')
+      .update({ status, is_completed: isCompleted })
+      .eq('id', id)
+      .then(({ error }) => {
+        if (error) console.error('Error updating task status:', error.message);
+      });
   };
 
   const toggleSubtask = async (taskId: string, subtaskId: string) => {
@@ -581,17 +629,36 @@ export default function App() {
   };
 
   const startTimer = (taskId: string) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, timer_start: new Date().toISOString() } : t));
+    const startTime = new Date().toISOString();
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, timer_start: startTime } : t));
+    
+    // Persist to Supabase
+    supabase.schema('mar').from('tasks')
+      .update({ timer_start: startTime })
+      .eq('id', taskId)
+      .then(({ error }) => {
+        if (error) console.error('Error starting timer:', error.message);
+      });
   };
 
   const stopTimer = (taskId: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId && t.timer_start) {
         const diff = Math.floor((new Date().getTime() - new Date(t.timer_start).getTime()) / 1000);
+        const totalSpent = (t.total_time_spent || 0) + diff;
+        
+        // Persist to Supabase
+        supabase.schema('mar').from('tasks')
+          .update({ timer_start: null, total_time_spent: totalSpent })
+          .eq('id', taskId)
+          .then(({ error }) => {
+            if (error) console.error('Error stopping timer:', error.message);
+          });
+
         return { 
           ...t, 
           timer_start: null, 
-          total_time_spent: (t.total_time_spent || 0) + diff 
+          total_time_spent: totalSpent 
         };
       }
       return t;
@@ -1515,6 +1582,7 @@ export default function App() {
                       onToggleSubtask={(sid) => toggleSubtask(task.id, sid)}
                       onStartTimer={() => startTimer(task.id)}
                       onStopTimer={() => stopTimer(task.id)}
+                      onDelete={() => deleteTask(task.id)}
                       showProject 
                     />
                   ))}
@@ -1770,6 +1838,7 @@ export default function App() {
                           onToggleSubtask={(sid) => toggleSubtask(task.id, sid)}
                           onStartTimer={() => startTimer(task.id)}
                           onStopTimer={() => stopTimer(task.id)}
+                          onDelete={() => deleteTask(task.id)}
                         />
                       ))
                     ) : (
@@ -2041,10 +2110,33 @@ export default function App() {
                  <div className="bg-white border border-zinc-100 p-4 rounded-[20px] shadow-sm hidden md:block">
                     <p className="text-[8px] font-black uppercase tracking-[0.15em] text-zinc-400 mb-1">Conversión</p>
                     <p className="text-xl md:text-2xl font-black text-blue-500">{allUsers.length > 0 ? Math.round((allUsers.filter(u => u.subscription_status === 'active').length / allUsers.length) * 100) : 0}%</p>
-                 </div>
-              </div>
+                  </div>
+               </div>
 
-              {isAdminCreatingUser && (
+               {/* Recurso de Marca para Descarga */}
+               <div className="bg-zinc-900 rounded-[32px] p-6 text-white overflow-hidden relative group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+                  <div className="relative flex flex-col md:flex-row justify-between items-center gap-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center border border-zinc-700 shadow-xl overflow-hidden">
+                        <Lightbulb className="w-8 h-8 fill-yellow-400 text-yellow-400" />
+                      </div>
+                      <div className="text-left">
+                        <h3 className="text-lg font-black tracking-tight">Recursos de Marca</h3>
+                        <p className="text-zinc-400 text-[10px] font-bold uppercase tracking-widest leading-none">Logo oficial "MAR" (Formato SVG)</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={downloadLogo}
+                      className="w-full md:w-auto bg-yellow-400 text-black px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-yellow-300 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Descargar Logo
+                    </button>
+                  </div>
+               </div>
+
+               {isAdminCreatingUser && (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -3998,6 +4090,7 @@ interface TaskItemProps {
   onToggleSubtask?: (sid: string) => void;
   onStartTimer?: () => void;
   onStopTimer?: () => void;
+  onDelete?: () => void;
   onStatusChange?: (status: 'todo' | 'in_progress' | 'done') => void;
 }
 
@@ -4009,7 +4102,8 @@ const TaskItem: React.FC<TaskItemProps> = ({
   onAddSubtask, 
   onToggleSubtask,
   onStartTimer,
-  onStopTimer
+  onStopTimer,
+  onDelete
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [newSubtask, setNewSubtask] = useState('');
@@ -4113,7 +4207,13 @@ const TaskItem: React.FC<TaskItemProps> = ({
                 <MessageSquare className="w-4 h-4" />
               </button>
             )}
-            <button className="p-2 text-zinc-400 hover:text-red-500 transition-colors">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if(confirm('¿Deseas eliminar esta tarea?')) onDelete?.();
+              }}
+              className="p-2 text-zinc-400 hover:text-red-500 transition-colors"
+            >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
