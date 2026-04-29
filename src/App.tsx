@@ -98,14 +98,14 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 // Mock data for initial preview if Supabase is not connected
 const MOCK_PROJECTS: Project[] = [
-  { id: '1', name: 'Aprender React', description: 'Dominar hooks y patrones avanzados', created_at: new Date().toISOString(), user_id: '1', color: '#3b82f6', status: 'active' },
-  { id: '2', name: 'Proyecto PWA', description: 'Crear MAR para organizar tareas', created_at: new Date().toISOString(), user_id: '1', color: '#10b981', status: 'active' },
+  { id: '00000000-0000-0000-0000-000000000001', name: 'Aprender React', description: 'Dominar hooks y patrones avanzados', created_at: new Date().toISOString(), user_id: '00000000-0000-0000-0000-000000000000', color: '#3b82f6', status: 'active' },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'Proyecto PWA', description: 'Crear MAR para organizar tareas', created_at: new Date().toISOString(), user_id: '00000000-0000-0000-0000-000000000000', color: '#10b981', status: 'active' },
 ];
 
 const MOCK_TASKS: Task[] = [
-  { id: '1', title: 'Configurar Supabase', description: 'Crear tablas y políticas', is_completed: true, is_focus: false, project_id: '2', goal_id: null, due_date: null, created_at: new Date().toISOString(), user_id: '1', status: 'done', tags: ['Backend'], subtasks: [] },
-  { id: '2', title: 'Diseñar UI Principal', description: 'Usar Tailwind y Motion', is_completed: false, is_focus: true, project_id: '2', goal_id: null, due_date: null, created_at: new Date().toISOString(), user_id: '1', scheduled_time: '10:00', is_for_today: true, status: 'in_progress', tags: ['Diseño'], subtasks: [{ id: 's1', title: 'Elegir paleta', is_completed: true }, { id: 's2', title: 'Crear componentes', is_completed: false }] },
-  { id: '3', title: '🔔 Recordatorio: Revisar Metas', description: '', is_completed: false, is_focus: false, project_id: '1', goal_id: null, due_date: new Date().toISOString(), created_at: new Date().toISOString(), user_id: '1', scheduled_time: '18:30', reminder_active: true, is_for_today: true, status: 'todo', tags: ['Personal'], subtasks: [] },
+  { id: '00000000-0000-0000-0000-000000000011', title: 'Configurar Supabase', description: 'Crear tablas y políticas', is_completed: true, is_focus: false, project_id: '00000000-0000-0000-0000-000000000002', goal_id: null, due_date: null, created_at: new Date().toISOString(), user_id: '00000000-0000-0000-0000-000000000000', status: 'done', tags: ['Backend'], subtasks: [] },
+  { id: '00000000-0000-0000-0000-000000000012', title: 'Diseñar UI Principal', description: 'Usar Tailwind y Motion', is_completed: false, is_focus: true, project_id: '00000000-0000-0000-0000-000000000002', goal_id: null, due_date: null, created_at: new Date().toISOString(), user_id: '00000000-0000-0000-0000-000000000000', scheduled_time: '10:00', is_for_today: true, status: 'in_progress', tags: ['Diseño'], subtasks: [{ id: 's1', title: 'Elegir paleta', is_completed: true }, { id: 's2', title: 'Crear componentes', is_completed: false }] },
+  { id: '00000000-0000-0000-0000-000000000013', title: '🔔 Recordatorio: Revisar Metas', description: '', is_completed: false, is_focus: false, project_id: '00000000-0000-0000-0000-000000000001', goal_id: null, due_date: new Date().toISOString(), created_at: new Date().toISOString(), user_id: '00000000-0000-0000-0000-000000000000', scheduled_time: '18:30', reminder_active: true, is_for_today: true, status: 'todo', tags: ['Personal'], subtasks: [] },
 ];
 
 export default function App() {
@@ -231,11 +231,11 @@ export default function App() {
 
     async function fetchData() {
       try {
-        const currentUserId = user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id;
+        let finalUserId = user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id;
         
         // Fetch or Create Profile
-        if (user.phone && !user.subscription_status) {
-          const { data: profile } = await supabase
+        if (user.phone && (!user.subscription_status || user.id === user.phone)) {
+          const { data: profile, error: profErr } = await supabase
             .schema('mar')
             .from('profiles')
             .select('*')
@@ -244,25 +244,39 @@ export default function App() {
 
           if (profile) {
             setUser((prev: any) => ({ ...prev, ...profile }));
+            finalUserId = profile.id;
           } else {
-            const { data: newProfile } = await supabase
+            console.log('DEBUG: Intentando crear perfil en schema mar para', user.phone);
+            const tempId = crypto.randomUUID();
+            const { data: newProfile, error: createErr } = await supabase
               .schema('mar')
               .from('profiles')
               .insert([{ 
-                id: crypto.randomUUID(),
+                id: tempId,
                 phone_number: user.phone, 
-                full_name: 'Usuario Nuevo',
-                subscription_status: 'pending' 
+                full_name: user.full_name || 'Usuario Nuevo',
+                subscription_status: 'active'
               }])
               .select()
               .single();
-            if (newProfile) setUser((prev: any) => ({ ...prev, ...newProfile }));
+
+            if (createErr) {
+              console.error('ERROR CRÍTICO al crear perfil:', createErr.message, createErr.details);
+              alert('Error de base de datos: Asegúrate de que el schema "mar" esté en Exposed Schemas en Supabase Settings -> API');
+            }
+            if (newProfile) {
+              setUser((prev: any) => ({ ...prev, ...newProfile }));
+              finalUserId = newProfile.id;
+            }
           }
         }
 
-        const { data: projectsData } = await supabase.schema('mar').from('projects').select('*').eq('user_id', currentUserId);
-        const { data: tasksData } = await supabase.schema('mar').from('tasks').select('*').eq('user_id', currentUserId);
+        const { data: projectsData, error: projErr } = await supabase.schema('mar').from('projects').select('*').eq('user_id', finalUserId);
+        const { data: tasksData, error: taskErr } = await supabase.schema('mar').from('tasks').select('*').eq('user_id', finalUserId);
         
+        if (projErr) console.error('Error fetching projects:', projErr.message);
+        if (taskErr) console.error('Error fetching tasks:', taskErr.message);
+
         if (projectsData) setProjects(projectsData);
         if (tasksData) setTasks(tasksData);
 
@@ -415,6 +429,9 @@ export default function App() {
         setSmartCaptureText('');
         playHaptic('click');
         setShowQuickAction(false);
+      } else if (error) {
+        console.error('Error in smart capture:', error.message);
+        alert('Error al capturar tarea: ' + error.message);
       }
     } catch (err) {
       console.error(err);
@@ -427,10 +444,27 @@ export default function App() {
 
   const addTask = async () => {
     if (!newTaskTitle.trim() || !user) return;
+    
+    // Safety: ensure we are using a real database ID
+    const currentUserId = user.subscription_status ? user.id : (user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : null);
+    
+    if (!currentUserId && user.id !== 'admin') {
+      alert('Tu perfil aún se está sincronizando. Por favor espera un segundo.');
+      return;
+    }
+
+    // Validate project_id: if it's a mock project (starting with 0000), we nullify it or verify it exists
+    let validProjectId = selectedProjectId;
+    if (selectedProjectId && selectedProjectId.startsWith('00000000-0000-0000-0000-')) {
+       // Check if this project actually exists in our local projects state from DB
+       const projectExists = projects.find(p => p.id === selectedProjectId);
+       if (!projectExists) validProjectId = null;
+    }
+
     const newTask = {
       title: newTaskTitle,
-      user_id: user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id,
-      project_id: selectedProjectId,
+      user_id: currentUserId || '00000000-0000-0000-0000-000000000000',
+      project_id: validProjectId,
       due_date: newTaskDueDate || (isForToday ? new Date().toISOString() : null),
       is_for_today: isForToday,
       reminder_active: reminderActive,
@@ -455,16 +489,26 @@ export default function App() {
       setIsForToday(true);
       setReminderActive(false);
       setScheduledTime('09:00');
+      playHaptic('success');
     } else if (error) {
-       console.error('Task creation failed:', error.message);
+       console.error('Task creation failed:', error.message, error.details);
+       alert('Error de guardado: ' + error.message + (error.details ? ` (${error.details})` : ''));
     }
   };
 
   const addProject = async () => {
     if (!newProjectName.trim() || !user) return;
+    
+    const currentUserId = user.subscription_status ? user.id : (user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : null);
+
+    if (!currentUserId && user.id !== 'admin') {
+      alert('Sincronizando identidad... reintenta en un momento.');
+      return;
+    }
+
     const newProject = {
       name: newProjectName,
-      user_id: user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id, // Fallback indexable UUID for admin or real id
+      user_id: currentUserId || '00000000-0000-0000-0000-000000000000',
       color: newProjectColor,
       due_date: newProjectDueDate || null,
       status: 'active'
@@ -479,8 +523,10 @@ export default function App() {
       setNewProjectColor('#000000');
       setQuickActionType(null);
       setShowQuickAction(false);
+      playHaptic('success');
     } else if (error) {
-      console.error('Project creation failed:', error.message);
+      console.error('Project creation failed:', error.message, error.details);
+      alert('Error al crear el proyecto: ' + error.message);
     }
   };
 
@@ -527,9 +573,11 @@ export default function App() {
   const addReminder = async () => {
     if (!reminderText.trim() || !user) return;
     
+    const currentUserId = user.subscription_status ? user.id : (user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : null);
+
     const newTask = {
       title: `🔔 Recordatorio: ${reminderText}`,
-      user_id: user.id === 'admin' ? '00000000-0000-0000-0000-000000000000' : user.id,
+      user_id: currentUserId || '00000000-0000-0000-0000-000000000000',
       project_id: null,
       due_date: new Date().toISOString(),
       is_for_today: true,
@@ -548,6 +596,10 @@ export default function App() {
       setQuickActionType(null);
       setShowQuickAction(false);
       setScheduledTime('09:00');
+      playHaptic('success');
+    } else if (error) {
+      console.error('Error al guardar recordatorio:', error.message);
+      alert('Error: ' + error.message);
     }
   };
 
